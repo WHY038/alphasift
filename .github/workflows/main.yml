@@ -1,0 +1,54 @@
+# 工作流的名称
+name: Python CI
+
+# 触发工作流的事件
+# 1. 当有代码推送到 main 分支时
+# 2. 当有 Pull Request 提交到 main 分支时
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+# 定义工作流中的任务
+jobs:
+  build:
+    # 运行任务的操作系统环境
+    runs-on: ubuntu-latest
+    # 使用矩阵策略，在多个 Python 版本上运行测试
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.10", "3.11"]
+
+    steps:
+    # 第一步：检出你的代码
+    - uses: actions/checkout@v4
+
+    # 第二步：设置指定版本的 Python 环境
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    # 第三步：安装项目依赖
+    # -e . 表示以可编辑模式安装当前项目
+    # [test] 表示安装在 pyproject.toml 中定义的 "test" 附加依赖
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .[test]
+
+    # 第四步：运行测试
+    # 使用 pytest 命令
+    # 将 GitHub Secrets 注入到环境变量中，以便测试代码可以使用它们
+    - name: Run tests
+      env:
+        # 重要：你需要提前在仓库的 Settings > Secrets 中设置这些值
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        # 如果测试需要，可以添加其他非敏感变量
+        LLM_TEMPERATURE: 0.2
+        LLM_MAX_RETRIES: 1
+      run: |
+        pytest
