@@ -40,7 +40,7 @@ jobs:
             specifier = SpecifierSet(pyproject["project"]["requires-python"])
             matching_versions = [v for v in AVAILABLE_PYTHONS if specifier.contains(v)]
             print(json.dumps(matching_versions))
-          ')
+')
           echo "versions=$VERSIONS" >> $GITHUB_OUTPUT
 
   # 第二个任务：构建和测试
