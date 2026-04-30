@@ -25,8 +25,6 @@ jobs:
 
       - name: Get compatible Python versions
         id: get-versions
-        # 运行一个 Python 脚本来解析 pyproject.toml
-        # 它会检查哪些可用的 Python 版本满足 requires-python 的要求
         run: |
           pip install tomli packaging
           VERSIONS=$(python -c '
