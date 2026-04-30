@@ -3,9 +3,12 @@ name: Python CI
 
 # 触发工作流的事件
 on:
+  # 允许手动在 Actions 页面触发
   workflow_dispatch:
+  # 在代码推送到 main 分支时触发
   push:
     branches: [ main ]
+  # 在向 main 分支提交 pull request 时触发
   pull_request:
     branches: [ main ]
 
@@ -27,16 +30,16 @@ jobs:
         run: |
           pip install tomli packaging
           VERSIONS=$(python -c '
-import tomli, json
-from packaging.specifiers import SpecifierSet
+            import tomli, json
+            from packaging.specifiers import SpecifierSet
 
-# GitHub Actions 支持的、我们关心的 Python 版本列表
-AVAILABLE_PYTHONS = ["3.10", "3.11", "3.12"]
-with open("pyproject.toml", "rb") as f:
-  pyproject = tomli.load(f)
-specifier = SpecifierSet(pyproject["project"]["requires-python"])
-matching_versions = [v for v in AVAILABLE_PYTHONS if specifier.contains(v)]
-print(json.dumps(matching_versions))
+            # GitHub Actions 支持的、我们关心的 Python 版本列表
+            AVAILABLE_PYTHONS = ["3.10", "3.11", "3.12"]
+            with open("pyproject.toml", "rb") as f:
+              pyproject = tomli.load(f)
+            specifier = SpecifierSet(pyproject["project"]["requires-python"])
+            matching_versions = [v for v in AVAILABLE_PYTHONS if specifier.contains(v)]
+            print(json.dumps(matching_versions))
           ')
           echo "versions=$VERSIONS" >> $GITHUB_OUTPUT
 
@@ -53,30 +56,30 @@ print(json.dumps(matching_versions))
         python-version: ${{ fromJson(needs.setup.outputs.python-versions) }}
 
     steps:
-    # 第一步：检出你的代码
-    - uses: actions/checkout@v4
+      # 第一步：检出你的代码
+      - uses: actions/checkout@v4
 
-    # 第二步：设置指定版本的 Python 环境
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
+      # 第二步：设置指定版本的 Python 环境
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
 
-    # 第三步：安装项目依赖
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -e .[test]
+      # 第三步：安装项目依赖
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[test]
 
-    # 第四步：运行测试
-    - name: Run tests
-      env:
-        # 重要：你需要提前在仓库的 Settings > Secrets 中设置这些值
-        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        # 如果测试需要，可以添加其他非敏感变量
-        LLM_TEMPERATURE: 0.2
-        LLM_MAX_RETRIES: 1
-      run: |
-        pytest
+      # 第四步：运行测试
+      - name: Run tests
+        env:
+          # 重要：你需要提前在仓库的 Settings > Secrets 中设置这些值
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          # 如果测试需要，可以添加其他非敏感变量
+          LLM_TEMPERATURE: 0.2
+          LLM_MAX_RETRIES: 1
+        run: |
+          pytest
