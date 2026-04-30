@@ -30,6 +30,12 @@ env:
 jobs:
   run_and_email:
     runs-on: ubuntu-latest
+    # --- 新增内容：自动重试和超时设置 ---
+    # 如果任务失败，最多重试 2 次
+    retries: 2
+    # 整个任务的超时时间设置为 15 分钟
+    timeout-minutes: 15
+    # ------------------------------------
     steps:
       # 步骤 1：检出代码
       - name: Checkout code
@@ -67,13 +73,18 @@ jobs:
               result = screen(strategy, use_llm=True)
           except Exception as e:
               print(f"An error occurred during screening: {e}")
-              sys.exit(1)
+              # 即使出错，也创建一个包含错误信息的报告，避免后续步骤失败
+              with open("report.html", "w", encoding="utf-8") as f:
+                  f.write(f"<h1>选股时发生错误</h1><p>策略: {strategy}</p><p>错误信息: {e}</p>")
+              # 正常退出，以便发送错误报告邮件
+              sys.exit(0)
 
           if not result or not result.picks:
               print("No stocks were picked. Exiting.")
-              # 创建一个空的 report.html 以免后续步骤失败
+              # 创建一个内容为“未选出股票”的 report.html
               with open("report.html", "w", encoding="utf-8") as f:
-                  f.write("<h1>选股结果</h1><p>本次运行没有选出任何股票。</p>")
+                  f.write(f"<h1>选股结果</h1><p>策略: {strategy}</p><p>本次运行没有选出任何股票。</p>")
+              # 正常退出，以便发送邮件
               sys.exit(0)
 
           # --- 开始构建 HTML ---
@@ -85,7 +96,7 @@ jobs:
                   table {{ border-collapse: collapse; width: 100%; }}
                   th, td {{ border: 1px solid #dddddd; text-align: left; padding: 8px; }}
                   th {{ background-color: #f2f2f2; }}
-                  .thesis {{ max-width: 400px; }}
+                  .thesis {{ max-width: 400px; word-wrap: break-word; }}
               </style>
           </head>
           <body>
@@ -105,13 +116,15 @@ jobs:
           """
 
           for pick in result.picks:
+              # 使用 getattr 安全地访问 thesis 属性，如果不存在则返回 'N/A'
+              thesis_text = getattr(pick, 'thesis', 'N/A')
               html += f"""
                       <tr>
                           <td>{pick.rank}</td>
                           <td>{pick.code}</td>
                           <td>{pick.name}</td>
                           <td>{pick.final_score:.2f}</td>
-                          <td class="thesis">{pick.thesis or 'N/A'}</td>
+                          <td class="thesis">{thesis_text}</td>
                       </tr>
               """
 
@@ -145,6 +158,8 @@ jobs:
 
       # 步骤 5：发送邮件
       - name: Send email report
+        # 仅在任务成功时发送邮件
+        if: success()
         uses: dawidd6/action-send-mail@v3
         with:
           # 邮件服务器配置，从 Secrets 读取
@@ -159,4 +174,19 @@ jobs:
           # 收件人
           to: ${{ secrets.MAIL_TO }}
           # 发件人
+          from: Alphasift Reporter <${{ secrets.MAIL_USERNAME }}>
+
+      # 步骤 6：发送失败通知邮件
+      - name: Send failure notification
+        # 仅在任务失败时发送邮件
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ secrets.MAIL_SERVER }}
+          server_port: ${{ secrets.MAIL_PORT }}
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: "【失败】Alphasift 选股报告"
+          body: "工作流 'Daily Stock Screening Report' 在获取数据时多次尝试后仍然失败，请检查 GitHub Actions 日志了解详情。"
+          to: ${{ secrets.MAIL_TO }}
           from: Alphasift Reporter <${{ secrets.MAIL_USERNAME }}>
