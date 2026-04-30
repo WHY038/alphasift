@@ -1,0 +1,84 @@
+# 工作流的名称
+name: Manual Stock Screener
+
+# 触发工作流的事件
+on:
+  # 这使得你可以在 Actions 页面手动触发这个工作流
+  workflow_dispatch:
+    inputs:
+      # 定义一个输入参数，让你可以在触发时选择策略
+      strategy:
+        description: '要执行的选股策略'
+        required: true
+        default: 'dual_low'
+        type: choice
+        options:
+          - dual_low
+          - volume_breakout
+          - quality_value
+          - capital_heat
+          - oversold_reversal
+          - balanced_alpha
+          - shrink_pullback
+      # 定义一个输入参数，决定是否使用 LLM 排序
+      use_llm:
+        description: '是否使用 LLM 进行排序 (需要已配置 API Key)'
+        required: true
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+# 定义工作流中的任务
+jobs:
+  # 任务的唯一 ID
+  run_screener:
+    # 运行任务的操作系统环境
+    runs-on: ubuntu-latest
+
+    steps:
+      # 第 1 步：检出你的代码
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 第 2 步：设置 Python 3.11 环境
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # 第 3 步：安装项目依赖
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      # 第 4 步：执行选股命令
+      - name: Run alphasift screen
+        id: screener
+        # 根据你手动触发时选择的 use_llm 参数，决定是否添加 --no-llm 标志
+        run: |
+          if [ "${{ inputs.use_llm }}" = "true" ]; then
+            alphasift screen ${{ inputs.strategy }} > result.txt
+          else
+            alphasift screen ${{ inputs.strategy }} --no-llm > result.txt
+          fi
+        # 核心环境变量，从 Secrets 和 Variables 中读取
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          LITELLM_MODEL: ${{ vars.LITELLM_MODEL }}
+          OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL }}
+          LLM_TEMPERATURE: 0.2
+          LLM_MAX_RETRIES: 1
+
+      # 第 5 步：上传选股结果
+      - name: Upload result artifact
+        uses: actions/upload-artifact@v4
+        with:
+          # 产物的名称
+          name: stock-picks-${{ inputs.strategy }}
+          # 要上传的文件路径
+          path: result.txt
