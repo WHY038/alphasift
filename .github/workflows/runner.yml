@@ -23,6 +23,10 @@ on:
           - balanced_alpha
           - shrink_pullback
 
+# 解决 Node.js 20 弃用警告
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
 jobs:
   run_and_email:
     runs-on: ubuntu-latest
