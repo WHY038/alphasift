@@ -1,12 +1,11 @@
-# 工作流的名称
 name: Daily Stock Screening Report
 
 on:
-  # 1. 定时触发：每天北京时间 16:30 自动运行
+  # 定时触发：每天北京时间 16:30 自动运行
   schedule:
     - cron: '30 8 * * 1-5' # UTC 时间 8:30 对应北京时间 16:30 (周一至周五)
 
-  # 2. 手动触发：方便你随时运行
+  # 手动触发：方便随时运行
   workflow_dispatch:
     inputs:
       strategy:
@@ -29,22 +28,18 @@ env:
 
 jobs:
   run_and_email:
-    # --- 正确的缩进位置 ---
-    # retries, timeout-minutes, runs-on, steps 都在同一个层级
     runs-on: ubuntu-latest
-    # 如果任务失败，最多重试 2 次
-    retries: 2
     # 整个任务的超时时间设置为 15 分钟
     timeout-minutes: 15
-    # -----------------------
-    steps:
-      # 步骤 1：检出代码
-      - name: Checkout code
-        uses: actions/checkout@v4
 
-      # 步骤 2：设置 Python 环境
+    steps:
+      # 步骤 1：检出代码（升级到 v5）
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      # 步骤 2：设置 Python 环境（升级到 v6）
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.11'
 
@@ -159,27 +154,20 @@ jobs:
 
       # 步骤 5：发送邮件
       - name: Send email report
-        # 仅在任务成功时发送邮件
         if: success()
         uses: dawidd6/action-send-mail@v3
         with:
-          # 邮件服务器配置，从 Secrets 读取
           server_address: ${{ secrets.MAIL_SERVER }}
           server_port: ${{ secrets.MAIL_PORT }}
           username: ${{ secrets.MAIL_USERNAME }}
           password: ${{ secrets.MAIL_PASSWORD }}
-          # 邮件主题
           subject: "Alphasift 每日选股报告 (${{ inputs.strategy || 'balanced_alpha' }})"
-          # 邮件内容，直接读取 HTML 文件
           html_body: file://report.html
-          # 收件人
           to: ${{ secrets.MAIL_TO }}
-          # 发件人
           from: Alphasift Reporter <${{ secrets.MAIL_USERNAME }}>
 
       # 步骤 6：发送失败通知邮件
       - name: Send failure notification
-        # 仅在任务（包括重试）最终失败时发送邮件
         if: failure()
         uses: dawidd6/action-send-mail@v3
         with:
