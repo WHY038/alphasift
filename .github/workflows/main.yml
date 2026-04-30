@@ -80,4 +80,4 @@ jobs:
           LLM_TEMPERATURE: 0.2
           LLM_MAX_RETRIES: 1
         run: |
-          pytest
+          python -m pytest
