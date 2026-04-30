@@ -29,13 +29,14 @@ env:
 
 jobs:
   run_and_email:
+    # --- 正确的缩进位置 ---
+    # retries, timeout-minutes, runs-on, steps 都在同一个层级
     runs-on: ubuntu-latest
-    # --- 新增内容：自动重试和超时设置 ---
     # 如果任务失败，最多重试 2 次
     retries: 2
     # 整个任务的超时时间设置为 15 分钟
     timeout-minutes: 15
-    # ------------------------------------
+    # -----------------------
     steps:
       # 步骤 1：检出代码
       - name: Checkout code
@@ -178,7 +179,7 @@ jobs:
 
       # 步骤 6：发送失败通知邮件
       - name: Send failure notification
-        # 仅在任务失败时发送邮件
+        # 仅在任务（包括重试）最终失败时发送邮件
         if: failure()
         uses: dawidd6/action-send-mail@v3
         with:
@@ -187,6 +188,6 @@ jobs:
           username: ${{ secrets.MAIL_USERNAME }}
           password: ${{ secrets.MAIL_PASSWORD }}
           subject: "【失败】Alphasift 选股报告"
-          body: "工作流 'Daily Stock Screening Report' 在获取数据时多次尝试后仍然失败，请检查 GitHub Actions 日志了解详情。"
+          body: "工作流 'Daily Stock Screening Report' 在多次尝试后仍然失败，请检查 GitHub Actions 日志了解详情。"
           to: ${{ secrets.MAIL_TO }}
           from: Alphasift Reporter <${{ secrets.MAIL_USERNAME }}>
