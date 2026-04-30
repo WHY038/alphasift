@@ -55,7 +55,7 @@ jobs:
 
     steps:
       # 第一步：检出你的代码
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # 第二步：设置指定版本的 Python 环境
       - name: Set up Python ${{ matrix.python-version }}
