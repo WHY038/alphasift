@@ -3,6 +3,7 @@ name: Python CI
 
 # 触发工作流的事件
 on:
+  workflow_dispatch:
   push:
     branches: [ main ]
   pull_request:
