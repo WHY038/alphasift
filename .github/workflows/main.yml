@@ -73,8 +73,11 @@ jobs:
       - name: Run tests
         env:
           # 重要：你需要提前在仓库的 Settings > Secrets 中设置这些值
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          # 从 Variables 中读取模型名称
+          LITELLM_MODEL: ${{ vars.LITELLM_MODEL_NAME }}
+          # 从 Variables 中读取 API Base URL
+          OPENAI_API_BASE: ${{ vars.API_BASE_URL }}
+          # 从 Secrets 中读取 API Key
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           # 如果测试需要，可以添加其他非敏感变量
           LLM_TEMPERATURE: 0.2
