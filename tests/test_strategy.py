@@ -11,6 +11,7 @@ def test_disabled_strategies_are_not_listed():
     assert "balanced_alpha" in strategies
     assert "capital_heat" in strategies
     assert "dual_low" in strategies
+    assert "momentum_quality" in strategies
     assert "oversold_reversal" in strategies
     assert "quality_value" in strategies
     assert "shrink_pullback" in strategies
@@ -24,6 +25,7 @@ def test_list_strategies_returns_enabled_strategies_only():
         "balanced_alpha",
         "capital_heat",
         "dual_low",
+        "momentum_quality",
         "oversold_reversal",
         "quality_value",
         "shrink_pullback",

@@ -59,6 +59,43 @@ def test_config_reads_daily_fetch_retries(monkeypatch):
     assert config.daily_fetch_retries == 4
 
 
+def test_config_prefers_tushare_when_token_is_configured(monkeypatch):
+    monkeypatch.delenv("SNAPSHOT_SOURCE_PRIORITY", raising=False)
+    monkeypatch.setenv("TUSHARE_TOKEN", "token")
+
+    config = Config.from_env()
+
+    assert config.snapshot_source_priority == [
+        "tushare",
+        "efinance",
+        "akshare_em",
+        "em_datacenter",
+    ]
+
+
+def test_config_omits_tushare_from_default_priority_without_token(monkeypatch):
+    monkeypatch.delenv("SNAPSHOT_SOURCE_PRIORITY", raising=False)
+    monkeypatch.delenv("TUSHARE_TOKEN", raising=False)
+    monkeypatch.delenv("TUSHARE_API_TOKEN", raising=False)
+
+    config = Config.from_env()
+
+    assert config.snapshot_source_priority == [
+        "efinance",
+        "akshare_em",
+        "em_datacenter",
+    ]
+
+
+def test_config_respects_explicit_snapshot_priority_with_tushare_token(monkeypatch):
+    monkeypatch.setenv("TUSHARE_TOKEN", "token")
+    monkeypatch.setenv("SNAPSHOT_SOURCE_PRIORITY", "efinance,em_datacenter")
+
+    config = Config.from_env()
+
+    assert config.snapshot_source_priority == ["efinance", "em_datacenter"]
+
+
 def test_config_reads_industry_and_candidate_context_env(monkeypatch):
     monkeypatch.setenv("INDUSTRY_MAP_FILES", "/tmp/industry.csv,/tmp/concepts.json")
     monkeypatch.setenv("INDUSTRY_PROVIDER", "akshare")

@@ -319,11 +319,9 @@ def _parse_ranking_response_detail(response: str, candidates: list[Pick]) -> Ran
         logger.warning("No JSON object or array found in LLM response")
         return RankingParseResult(candidates, 0.0, errors)
 
-    try:
-        parsed = json.loads(cleaned[start:end])
-    except json.JSONDecodeError as e:
-        errors.append(f"json_decode_error:{e}")
-        logger.warning("Failed to parse LLM ranking JSON: %s", e)
+    raw_json = cleaned[start:end]
+    parsed = _try_parse_json_lenient(raw_json, errors)
+    if parsed is None:
         return RankingParseResult(candidates, 0.0, errors)
     if isinstance(parsed, dict):
         items = parsed.get("ranked", [])
@@ -431,6 +429,47 @@ def _safe_str(value, *, max_len: int) -> str:
     if value is None:
         return ""
     return str(value).strip()[:max_len]
+
+
+def _try_parse_json_lenient(raw: str, errors: list[str]):
+    """Attempt to parse LLM JSON output, tolerating common formatting drift.
+
+    Steps applied in order: strict parse → strip trailing commas → balance
+    truncated brackets → return None if all fail. Any repair that succeeds is
+    recorded in ``errors`` for diagnostics.
+    """
+    import re
+
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as exc:
+        first_error = exc
+
+    # Repair 1: remove trailing commas before } or ].
+    repaired = re.sub(r",(\s*[}\]])", r"\1", raw)
+    if repaired != raw:
+        try:
+            result = json.loads(repaired)
+            errors.append("json_repaired:trailing_comma")
+            return result
+        except json.JSONDecodeError:
+            pass
+
+    # Repair 2: close unbalanced brackets caused by truncated output.
+    open_curly = repaired.count("{") - repaired.count("}")
+    open_square = repaired.count("[") - repaired.count("]")
+    if open_curly > 0 or open_square > 0:
+        patched = repaired + ("]" * max(open_square, 0)) + ("}" * max(open_curly, 0))
+        try:
+            result = json.loads(patched)
+            errors.append("json_repaired:closed_brackets")
+            return result
+        except json.JSONDecodeError:
+            pass
+
+    errors.append(f"json_decode_error:{first_error}")
+    logger.warning("Failed to parse LLM ranking JSON: %s", first_error)
+    return None
 
 
 def _safe_string_list(value) -> list[str]:

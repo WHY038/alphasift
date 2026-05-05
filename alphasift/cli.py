@@ -182,6 +182,14 @@ def main():
     ap = sub.add_parser("audit", help="评估项目能力、策略配置覆盖和已知短板")
     ap.add_argument("--json", action="store_true", help="以 JSON 输出")
 
+    # quickstart
+    qp = sub.add_parser(
+        "quickstart",
+        help="一键演示：列出策略 → 跑一个无 LLM 的 dual_low → 输出排名摘要",
+    )
+    qp.add_argument("--strategy", default="dual_low", help="演示用策略，默认 dual_low")
+    qp.add_argument("--max-output", type=int, default=5, help="演示输出候选数")
+
     args = parser.parse_args()
     _apply_env_file_args(args.env_file)
 
@@ -329,9 +337,68 @@ def main():
         else:
             print(_format_audit_explain(result))
 
+    elif args.command == "quickstart":
+        _run_quickstart(strategy=args.strategy, max_output=args.max_output)
+
     else:
         parser.print_help()
         sys.exit(1)
+
+
+def _run_quickstart(*, strategy: str = "dual_low", max_output: int = 5) -> None:
+    """One-shot showcase: list strategies, screen without LLM, print top picks.
+
+    Mirrors the AlphaEvo `showcase` UX: no API key required, prints a
+    deterministic-looking summary that fits a single screen.
+    """
+    print("=" * 60)
+    print("AlphaSift Quickstart  ·  无 API key 演示")
+    print("=" * 60)
+    print()
+
+    config = Config.from_env()
+    strategies = list_strategies(config.strategies_dir)
+    print(f"[1/3] 可用策略 ({len(strategies)}):")
+    for s in strategies:
+        marker = "→" if s.name == strategy else " "
+        print(f"   {marker} {s.name:<20s} {s.display_name}")
+    print()
+
+    print(f"[2/3] 执行 `{strategy}` 选股 (--no-llm, --no-post-analysis, top {max_output}) …")
+    try:
+        result = screen(
+            strategy,
+            market="cn",
+            max_output=max_output,
+            use_llm=False,
+            post_analyzers=[],
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(f"   失败: {exc}")
+        print("   提示: 检查网络，或设置 SNAPSHOT_SOURCE_PRIORITY / TUSHARE_TOKEN")
+        sys.exit(2)
+
+    print(
+        f"   全市场 {result.snapshot_count} 只 → 硬筛后 {result.after_filter_count} 只 "
+        f"→ 输出 {len(result.picks)} 只 (源: {result.snapshot_source})"
+    )
+    print()
+
+    print("[3/3] 候选排名:")
+    print(f"   {'rank':<5}{'code':<10}{'name':<14}{'score':<8}{'price':<8}{'pe':<8}{'pb':<6}")
+    for pick in result.picks:
+        pe = f"{pick.pe_ratio:.1f}" if pick.pe_ratio is not None else "-"
+        pb = f"{pick.pb_ratio:.2f}" if pick.pb_ratio is not None else "-"
+        print(
+            f"   {pick.rank:<5}{pick.code:<10}{pick.name[:12]:<14}"
+            f"{pick.final_score:<8.1f}{pick.price:<8.2f}{pe:<8}{pb:<6}"
+        )
+    print()
+    print("下一步:")
+    print("   alphasift screen <strategy> --explain     # 查看入选理由和因子分")
+    print("   alphasift screen <strategy> --save-run    # 保存运行")
+    print("   alphasift evaluate <run_id> --explain     # T+N 评估")
+    print("   alphasift strategies                      # 完整策略列表")
 
 
 def _format_screen_explain(result) -> str:

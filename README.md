@@ -25,6 +25,9 @@ cp .env.example .env
 # 列出可用策略
 alphasift strategies
 
+# 一键演示（无 API key）
+alphasift quickstart
+
 # 执行选股（不使用 LLM 排序）
 alphasift screen dual_low --no-llm
 
@@ -102,7 +105,9 @@ for p in result.picks:
 | `INDUSTRY_MAP_FILES` | 否 | 本地 code->industry/concepts/board_heat 映射 CSV/JSON/JSONL，逗号分隔 | - |
 | `INDUSTRY_PROVIDER` | 否 | 可选行业/概念/板块热度 provider，如 `akshare`；默认关闭 | `none` |
 | `INDUSTRY_PROVIDER_MAX_BOARDS` | 否 | provider 模式最多反查板块数 | `80` |
-| `SNAPSHOT_SOURCE_PRIORITY` | 否 | 数据源优先级（逗号分隔） | `efinance,akshare_em,em_datacenter` |
+| `SNAPSHOT_SOURCE_PRIORITY` | 否 | 数据源优先级（逗号分隔）；不设置时若配置了 Tushare token 会优先 `tushare` | 无 token: `efinance,akshare_em,em_datacenter` |
+| `TUSHARE_TOKEN` / `TUSHARE_API_TOKEN` | 使用 `tushare` 时必须 | Tushare Pro token，用于最近交易日日线和 daily_basic 兜底 | - |
+| `TUSHARE_TRADE_DATE` | 否 | 固定 Tushare 交易日，格式 `YYYYMMDD`，便于复现实验 | 自动取最近开市日 |
 | `POST_ANALYZERS` | 否 | L3 后置分析器，设为 `none` 可关闭 | `scorecard` |
 | `POST_ANALYSIS_MAX_PICKS` | 否 | DSA/HTTP 等高成本 L3 分析器最多处理前 N 只；本地 scorecard 默认处理全部输出 | `3` |
 | `POST_ANALYZER_URL` | `external_http` 时必须 | 外部评分工具 HTTP 地址 | - |
@@ -116,7 +121,7 @@ for p in result.picks:
 | `DAILY_ENRICH_ENABLED` | 否 | 是否默认对 L1 后 Top N 候选补充日 K 特征 | `false` |
 | `DAILY_ENRICH_MAX_CANDIDATES` | 否 | 日 K 增强最多处理候选数 | `100` |
 | `DAILY_LOOKBACK_DAYS` | 否 | 日 K 特征回看天数 | `120` |
-| `DAILY_SOURCE` | 否 | 日 K 数据源 | `akshare` |
+| `DAILY_SOURCE` | 否 | 日 K 数据源：`akshare`、`baostock` 或 `auto` | `akshare` |
 | `DAILY_FETCH_RETRIES` | 否 | 单只候选日 K 拉取失败后的重试次数 | `2` |
 | `RISK_ENABLED` | 否 | 是否启用独立风险层 | `true` |
 | `RISK_MAX_PENALTY` | 否 | 风险层最大扣分 | `12` |
@@ -167,9 +172,13 @@ alphasift/
 ├── SKILL.md                # Skill 描述（AI Agent 读这个）
 ├── strategies/             # 选股策略 YAML
 ├── docs/
+│   ├── configuration.md    # 配置参考
 │   ├── design.md           # 设计原则
+│   ├── positioning.md      # 项目定位
+│   ├── reference.md        # 项目结构、边界和实测记录
 │   ├── scoring.md          # 评分体系
-│   └── strategy-guide.md   # 策略编写指南
+│   ├── strategy-guide.md   # 策略编写指南
+│   └── usage.md            # 使用指南
 └── alphasift/              # Python 包
     ├── __init__.py
     ├── cli.py              # CLI 入口
@@ -179,7 +188,7 @@ alphasift/
     ├── daily.py            # 候选级日 K 特征增强
     ├── industry.py         # 行业/概念/板块热度映射
     ├── models.py           # 数据模型
-    ├── snapshot.py         # 全市场快照（3 种数据源 + 自动降级）
+    ├── snapshot.py         # 全市场快照（4 种数据源 + 自动降级）
     ├── filter.py           # L1 硬筛
     ├── scorer.py           # 评分计算
     ├── ranker.py           # L2 LLM 排序
@@ -202,7 +211,7 @@ alphasift/
 - **组合分散覆盖层**：LLM 标注行业/主题后，默认按行业风险桶对重复候选做温和扣分；若 LLM 缺失行业标签但候选有 `industry`，会用结构化行业作后备锚点
 - **LiteLLM 配置复用**：兼容主模型、fallback、多渠道和 Router YAML，方便复用作者其他项目配置
 - **独立风险层**：在 LLM 后对过热、弱信号、低置信度等风险做统一扣分或剔除
-- **候选级日 K 增强**：只对 L1 后 Top N 候选补充 MA、60 日涨幅、MACD/RSI、signal_score、20 日突破幅度、区间振幅、20 日量能比、实体强度、MA20 回踩距离和平台持续天数
+- **候选级日 K 增强**：只对 L1 后 Top N 候选补充 MA、60 日涨幅、MACD/RSI、signal_score、20 日突破幅度、区间振幅、20 日量能比、实体强度、MA20 回踩距离和平台持续天数；`DAILY_SOURCE=auto` 时会先试 `akshare`，失败后降级到 `baostock`
 - **默认 L3 评分器**：本地 `scorecard` 默认启用，作为最终候选的轻量一致性复核
 - **可评估闭环**：保存运行结果，用后续最新快照做 T+N 收益、胜率、缺失报价、交易成本扣减、等权组合摘要和形态后验标签统计；可选抓取日 K 路径计算最大回撤和最大浮盈
 - **DSA 后置增强**：DSA 只是一种可追加 L3 分析器，不参与全市场初筛，也不是默认依赖
@@ -227,15 +236,26 @@ AlphaSift 的定位是“全市场候选发现与横向排序引擎”。它负�
 
 ## 数据源
 
-支持三种 A 股全市场快照数据源，自动按优先级降级：
+支持四种 A 股全市场快照数据源，自动按优先级降级。默认未配置 Tushare token 时使用：
+
+```text
+efinance → akshare_em → em_datacenter
+```
+
+若配置了 `TUSHARE_TOKEN` / `TUSHARE_API_TOKEN`，且没有手工设置 `SNAPSHOT_SOURCE_PRIORITY`，默认改为：
+
+```text
+tushare → efinance → akshare_em → em_datacenter
+```
 
 | 数据源 | 接口 | 特点 |
 |--------|------|------|
 | `efinance` | push2.eastmoney.com | 实时推送，交易时段最快 |
 | `akshare_em` | 82.push2.eastmoney.com | 实时推送，备选 |
 | `em_datacenter` | data.eastmoney.com | 选股器 API，**非交易时段可用** |
+| `tushare` | Tushare Pro `daily` + `daily_basic` | 最近交易日数据，需 `TUSHARE_TOKEN`，非实时 |
 
-> 周末/节假日 push2 接口不可用，会自动降级到 em_datacenter。
+> 周末/节假日 push2 接口不可用，会自动降级到 em_datacenter。若某个数据源缺少当前策略必需字段，例如 PB，系统会跳过该源继续尝试后续来源。
 
 ## 内置策略
 
@@ -247,6 +267,7 @@ AlphaSift 的定位是“全市场候选发现与横向排序引擎”。它负�
 | `capital_heat` | 动量 | 资金活跃、量价同步但未极端过热 |
 | `oversold_reversal` | 反转 | 跌幅可控且流动性仍在的修复候选 |
 | `balanced_alpha` | 框架 | 综合估值、资金、动量、稳定性的通用发现策略 |
+| `momentum_quality` | 框架 | 兼顾趋势确认和基本面质量的中线候选发现 |
 | `shrink_pullback` | 趋势 | 候选级日 K 增强后识别均线多头与回踩结构 |
 
 ### 自定义策略
@@ -258,6 +279,7 @@ AlphaSift 的定位是“全市场候选发现与横向排序引擎”。它负�
 - 依赖日 K 的策略只对 L1 后 Top N 候选做增强；这不是完整历史数据库或全市场回测系统
 - `dsa` 后置分析器依赖外部 `daily_stock_analysis` 服务，当前按同步 REST 请求逐只调用，更适合最终名单的低频深度分析
 - L1/L2 主评分仍以快照横截面数据为主；任意 L3 后置分析器都只在最终阶段做覆盖和分数修正，不参与全市场初筛
+- `tushare` 兜底源依赖用户自己的 Pro token、接口积分和权限；当前取最近交易日收盘数据，不提供实时盘口
 - T+N 评估基于保存时价格与评估时最新快照价格，不等同严谨事件回测；可扣减交易成本、标记突破/回踩后验形态，并可选抓取日 K 路径估算最大回撤/最大浮盈，但暂不处理分红、停牌和调仓约束
 - 仓库内同时保留 `strategies/` 与 `alphasift/strategies/` 两份策略镜像用于开发态和安装态；内置策略文件需保持一致，但 `strategies/` 允许新增自定义 YAML
 
@@ -268,6 +290,7 @@ AlphaSift 的定位是“全市场候选发现与横向排序引擎”。它负�
 测试环境：Python 3.12，数据来源为上一交易日（2026-04-10）收盘数据。
 
 - efinance / akshare 实时推送接口在非交易时段不可用，自动降级到 `em_datacenter`（东方财富选股器 API）
+- 当前默认链路支持 Tushare；配置 token 且未手工指定 `SNAPSHOT_SOURCE_PRIORITY` 时会优先使用 Tushare。本次记录未配置 Tushare token，未触发该源
 - 未启用 LLM 排序（`--no-llm`）
 
 #### 双低选股（dual_low）
@@ -301,15 +324,19 @@ AlphaSift 的定位是“全市场候选发现与横向排序引擎”。它负�
 | efinance（push2.eastmoney.com） | 不可用 | 实时推送接口，非交易时段返回空响应 |
 | akshare_em（82.push2.eastmoney.com） | 不可用 | 同上 |
 | em_datacenter（data.eastmoney.com） | 可用 | 选股器 API，周末仍返回最近交易日数据 |
+| tushare（Tushare Pro） | 未触发 | 当前已支持，需 `TUSHARE_TOKEN` |
 
 降级链路验证通过：efinance → akshare_em → em_datacenter，自动切换到可用数据源。
 
 ## 文档
 
 - [SKILL.md](SKILL.md) — Skill 描述与函数接口
+- [docs/usage.md](docs/usage.md) — 使用指南
+- [docs/configuration.md](docs/configuration.md) — 配置参考
 - [docs/positioning.md](docs/positioning.md) — 项目定位与相对优势
 - [docs/comparison.md](docs/comparison.md) — 横向比较、短板与补齐优先级
 - [docs/design.md](docs/design.md) — 设计原则
+- [docs/reference.md](docs/reference.md) — 项目结构、数据源边界和实测记录
 - [docs/scoring.md](docs/scoring.md) — 评分体系详解
 - [docs/strategy-guide.md](docs/strategy-guide.md) — 策略编写指南
 

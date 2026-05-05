@@ -42,7 +42,7 @@ def test_screen_requires_dsa_url_when_deep_analysis_enabled(monkeypatch):
             }
         ]
     )
-    monkeypatch.setattr("alphasift.pipeline.fetch_snapshot_with_fallback", lambda sources: df)
+    monkeypatch.setattr("alphasift.pipeline.fetch_snapshot_with_fallback", lambda sources, **kwargs: df)
     monkeypatch.setattr("alphasift.pipeline.apply_hard_filters", lambda frame, filters: frame)
     monkeypatch.setattr("alphasift.pipeline.compute_screen_scores", lambda frame, cfg: frame)
 
@@ -78,7 +78,7 @@ def test_screen_runs_optional_dsa_analysis(monkeypatch):
         ]
     )
 
-    monkeypatch.setattr("alphasift.pipeline.fetch_snapshot_with_fallback", lambda sources: df)
+    monkeypatch.setattr("alphasift.pipeline.fetch_snapshot_with_fallback", lambda sources, **kwargs: df)
     monkeypatch.setattr("alphasift.pipeline.apply_hard_filters", lambda frame, filters: frame)
     monkeypatch.setattr("alphasift.pipeline.compute_screen_scores", lambda frame, cfg: frame)
 
@@ -143,7 +143,7 @@ def test_screen_uses_dsa_as_final_stage_overlay(monkeypatch):
         ]
     )
 
-    monkeypatch.setattr("alphasift.pipeline.fetch_snapshot_with_fallback", lambda sources: df)
+    monkeypatch.setattr("alphasift.pipeline.fetch_snapshot_with_fallback", lambda sources, **kwargs: df)
     monkeypatch.setattr("alphasift.pipeline.apply_hard_filters", lambda frame, filters: frame)
     monkeypatch.setattr("alphasift.pipeline.compute_screen_scores", lambda frame, cfg: frame)
 

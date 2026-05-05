@@ -28,6 +28,7 @@
 | `capital_heat.yaml` | 资金热度 | momentum | 资金活跃、量价同步但未极端过热 |
 | `oversold_reversal.yaml` | 超跌反转 | reversal | 跌幅可控且流动性仍在的修复候选 |
 | `balanced_alpha.yaml` | 均衡多因子 | framework | 综合估值、资金、动量、稳定性 |
+| `momentum_quality.yaml` | 趋势质量 | framework | 兼顾趋势确认和基本面质量的中线候选发现 |
 
 ## 运行与评估
 

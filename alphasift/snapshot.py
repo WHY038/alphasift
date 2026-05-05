@@ -6,6 +6,8 @@ This is separate from single-stock realtime quotes.
 """
 
 import logging
+import os
+from datetime import date, timedelta
 
 import pandas as pd
 
@@ -27,17 +29,29 @@ def fetch_cn_snapshot(source: str = "efinance") -> pd.DataFrame:
         return _fetch_akshare_em()
     elif source == "em_datacenter":
         return _fetch_em_datacenter()
+    elif source == "tushare":
+        return _fetch_tushare()
     else:
         raise ValueError(f"Unknown snapshot source: {source}")
 
 
-def fetch_snapshot_with_fallback(sources: list[str]) -> pd.DataFrame:
-    """Try sources in order, return first success."""
+def fetch_snapshot_with_fallback(
+    sources: list[str],
+    *,
+    required_columns: list[str] | None = None,
+) -> pd.DataFrame:
+    """Try sources in order, return first source matching required schema."""
     errors = []
     for source in sources:
         try:
             df = fetch_cn_snapshot(source)
             if not df.empty:
+                missing = _missing_required_columns(df, required_columns or [])
+                if missing:
+                    errors.append(
+                        f"{source}: missing required columns {','.join(missing)}"
+                    )
+                    continue
                 df.attrs["source_errors"] = list(errors)
                 logger.info("Snapshot fetched from %s: %d rows", source, len(df))
                 return df
@@ -46,6 +60,17 @@ def fetch_snapshot_with_fallback(sources: list[str]) -> pd.DataFrame:
             errors.append(f"{source}: {e}")
             logger.warning("Snapshot source %s failed: %s", source, e)
     raise RuntimeError(f"All snapshot sources failed: {'; '.join(errors)}")
+
+
+def _missing_required_columns(df: pd.DataFrame, required_columns: list[str]) -> list[str]:
+    missing: list[str] = []
+    for col in required_columns:
+        if col not in df.columns:
+            missing.append(col)
+            continue
+        if df[col].dropna().empty:
+            missing.append(col)
+    return missing
 
 
 def _fetch_efinance() -> pd.DataFrame:
@@ -120,6 +145,92 @@ def _fetch_em_datacenter() -> pd.DataFrame:
     return _normalize(df, source="em_datacenter")
 
 
+def _fetch_tushare() -> pd.DataFrame:
+    """Fetch latest available A-share snapshot via Tushare Pro.
+
+    Tushare is not a real-time source here. It is used as a resilient fallback
+    by joining the latest open trading day's daily quote and daily_basic data.
+    """
+    token = (
+        os.getenv("TUSHARE_TOKEN", "").strip()
+        or os.getenv("TUSHARE_API_TOKEN", "").strip()
+    )
+    if not token:
+        raise RuntimeError("tushare requires TUSHARE_TOKEN")
+
+    import tushare as ts
+
+    pro = ts.pro_api(token)
+    trade_date = _resolve_tushare_trade_date(pro)
+    daily = pro.daily(
+        trade_date=trade_date,
+        fields="ts_code,trade_date,close,pct_chg,amount",
+    )
+    daily_basic = pro.daily_basic(
+        trade_date=trade_date,
+        fields="ts_code,turnover_rate,volume_ratio,pe,pb,total_mv,circ_mv",
+    )
+    stock_basic = pro.stock_basic(
+        exchange="",
+        list_status="L",
+        fields="ts_code,symbol,name,industry",
+    )
+
+    if daily is None or daily.empty:
+        raise RuntimeError(f"tushare daily returned empty data for {trade_date}")
+    if daily_basic is None or daily_basic.empty:
+        raise RuntimeError(f"tushare daily_basic returned empty data for {trade_date}")
+
+    return _prepare_tushare_snapshot(daily, daily_basic, stock_basic)
+
+
+def _resolve_tushare_trade_date(pro) -> str:
+    """Return the latest open trade date for Tushare requests."""
+    explicit = os.getenv("TUSHARE_TRADE_DATE", "").strip()
+    if explicit:
+        return explicit
+
+    end = date.today()
+    start = end - timedelta(days=30)
+    calendar = pro.trade_cal(
+        exchange="",
+        start_date=start.strftime("%Y%m%d"),
+        end_date=end.strftime("%Y%m%d"),
+        is_open="1",
+        fields="cal_date,is_open",
+    )
+    if calendar is None or calendar.empty or "cal_date" not in calendar.columns:
+        raise RuntimeError("tushare trade_cal returned no open trading days")
+    return str(calendar["cal_date"].max())
+
+
+def _prepare_tushare_snapshot(
+    daily: pd.DataFrame,
+    daily_basic: pd.DataFrame,
+    stock_basic: pd.DataFrame | None,
+) -> pd.DataFrame:
+    """Join and unit-normalize Tushare tables into the common snapshot schema."""
+    merged = daily.merge(daily_basic, on="ts_code", how="left")
+    if stock_basic is not None and not stock_basic.empty:
+        merged = merged.merge(stock_basic, on="ts_code", how="left")
+    if "symbol" not in merged.columns:
+        merged["symbol"] = merged["ts_code"].astype(str).str.split(".").str[0]
+    else:
+        fallback_symbol = merged["ts_code"].astype(str).str.split(".").str[0]
+        merged["symbol"] = merged["symbol"].fillna(fallback_symbol)
+
+    # Tushare units: amount is thousand yuan; market caps are ten-thousand yuan.
+    for col, multiplier in {
+        "amount": 1000,
+        "total_mv": 10000,
+        "circ_mv": 10000,
+    }.items():
+        if col in merged.columns:
+            merged[col] = pd.to_numeric(merged[col], errors="coerce") * multiplier
+
+    return _normalize(merged, source="tushare")
+
+
 def _normalize(df: pd.DataFrame, source: str) -> pd.DataFrame:
     """Normalize column names to a standard schema.
 
@@ -175,6 +286,22 @@ def _normalize(df: pd.DataFrame, source: str) -> pd.DataFrame:
             "turnover_rate": ["TURNOVERRATE"],
             "industry": ["INDUSTRY", "INDUSTRY_NAME", "BOARD_NAME"],
             "concepts": ["CONCEPT", "CONCEPT_NAME", "THEME_NAME"],
+        }
+    elif source == "tushare":
+        standard_cols = {
+            "code": ["symbol", "code"],
+            "name": ["name"],
+            "price": ["close"],
+            "change_pct": ["pct_chg"],
+            "amount": ["amount"],
+            "total_mv": ["total_mv"],
+            "circ_mv": ["circ_mv"],
+            "pe_ratio": ["pe"],
+            "pb_ratio": ["pb"],
+            "volume_ratio": ["volume_ratio"],
+            "turnover_rate": ["turnover_rate"],
+            "industry": ["industry"],
+            "concepts": ["concepts"],
         }
     else:
         standard_cols = {}

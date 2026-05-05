@@ -51,7 +51,7 @@ def test_pipeline_enriches_daily_features_for_daily_strategy(monkeypatch):
             enriched.at[idx, "pullback_to_ma20_pct"] = 4 if is_target else 12
         return enriched
 
-    monkeypatch.setattr("alphasift.pipeline.fetch_snapshot_with_fallback", lambda sources: df)
+    monkeypatch.setattr("alphasift.pipeline.fetch_snapshot_with_fallback", lambda sources, **kwargs: df)
     monkeypatch.setattr("alphasift.pipeline.enrich_daily_features", fake_enrich)
 
     result = screen(
@@ -87,7 +87,7 @@ def test_pipeline_preserves_degradation_when_hard_filter_empty(monkeypatch):
     ])
     df.attrs["snapshot_source"] = "test"
     df.attrs["source_errors"] = ["efinance failed"]
-    monkeypatch.setattr("alphasift.pipeline.fetch_snapshot_with_fallback", lambda sources: df)
+    monkeypatch.setattr("alphasift.pipeline.fetch_snapshot_with_fallback", lambda sources, **kwargs: df)
 
     result = screen(
         "dual_low",

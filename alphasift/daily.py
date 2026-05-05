@@ -82,37 +82,104 @@ def fetch_daily_history(
     source: str = "akshare",
     retries: int = 2,
 ) -> pd.DataFrame:
-    """Fetch daily history for one A-share code."""
-    if source != "akshare":
+    """Fetch daily history for one A-share code.
+
+    ``source`` accepts ``akshare``, ``baostock`` or ``auto``. ``auto`` tries
+    akshare first and silently falls back to baostock when akshare fails. This
+    matches the multi-source resilience pattern recommended for A-share data
+    pipelines (DSA-style: free primary + free backup).
+    """
+    src = (source or "akshare").lower()
+    if src == "auto":
+        sources: tuple[str, ...] = ("akshare", "baostock")
+    elif src in ("akshare", "baostock"):
+        sources = (src,)
+    else:
         raise ValueError(f"Unsupported daily source: {source}")
 
     attempts = max(int(retries), 0) + 1
-    last_error: Exception | None = None
-    for attempt in range(attempts):
-        try:
-            import akshare as ak
-
-            start_date = (datetime.now() - timedelta(days=max(lookback_days * 2, 90))).strftime("%Y%m%d")
-            end_date = datetime.now().strftime("%Y%m%d")
-            df = ak.stock_zh_a_hist(
-                symbol=str(code).zfill(6),
-                period="daily",
-                start_date=start_date,
-                end_date=end_date,
-                adjust="qfq",
-            )
-            if df is None or df.empty:
-                raise RuntimeError(f"daily history returned empty data for {code}")
-            return df.tail(max(lookback_days, 30)).copy()
-        except Exception as exc:
-            last_error = exc
-            if attempt >= attempts - 1:
-                break
-            time.sleep(min(0.5 * (attempt + 1), 2.0))
+    errors: list[str] = []
+    for current in sources:
+        last_error: Exception | None = None
+        for attempt in range(attempts):
+            try:
+                if current == "akshare":
+                    return _fetch_daily_akshare(code, lookback_days=lookback_days)
+                return _fetch_daily_baostock(code, lookback_days=lookback_days)
+            except Exception as exc:  # noqa: BLE001 - aggregated below
+                last_error = exc
+                if attempt >= attempts - 1:
+                    break
+                time.sleep(min(0.5 * (attempt + 1), 2.0))
+        errors.append(f"{current} after {attempts} attempts: {last_error}")
 
     raise RuntimeError(
-        f"daily history fetch failed for {code} after {attempts} attempts: {last_error}"
-    ) from last_error
+        f"daily history fetch failed for {code}: {'; '.join(errors)}"
+    )
+
+
+def _fetch_daily_akshare(code: str, *, lookback_days: int) -> pd.DataFrame:
+    import akshare as ak
+
+    start_date = (datetime.now() - timedelta(days=max(lookback_days * 2, 90))).strftime("%Y%m%d")
+    end_date = datetime.now().strftime("%Y%m%d")
+    df = ak.stock_zh_a_hist(
+        symbol=str(code).zfill(6),
+        period="daily",
+        start_date=start_date,
+        end_date=end_date,
+        adjust="qfq",
+    )
+    if df is None or df.empty:
+        raise RuntimeError(f"akshare daily history empty for {code}")
+    return df.tail(max(lookback_days, 30)).copy()
+
+
+def _fetch_daily_baostock(code: str, *, lookback_days: int) -> pd.DataFrame:
+    """Fetch daily history via Baostock as a free fallback source.
+
+    Baostock uses ``sh.600519`` / ``sz.000001`` style codes and exposes
+    forward-adjusted prices via ``adjustflag='2'``.
+    """
+    try:
+        import baostock as bs
+    except ImportError as exc:
+        raise RuntimeError("baostock not installed; pip install baostock") from exc
+
+    bs_code = _to_baostock_code(code)
+    start_date = (datetime.now() - timedelta(days=max(lookback_days * 2, 90))).strftime("%Y-%m-%d")
+    end_date = datetime.now().strftime("%Y-%m-%d")
+
+    bs.login()
+    try:
+        rs = bs.query_history_k_data_plus(
+            bs_code,
+            "date,open,high,low,close,volume,amount",
+            start_date=start_date,
+            end_date=end_date,
+            frequency="d",
+            adjustflag="2",
+        )
+        if rs.error_code != "0":
+            raise RuntimeError(f"baostock error {rs.error_code}: {rs.error_msg}")
+        rows = []
+        while rs.next():
+            rows.append(rs.get_row_data())
+    finally:
+        bs.logout()
+
+    if not rows:
+        raise RuntimeError(f"baostock daily history empty for {code}")
+
+    df = pd.DataFrame(rows, columns=["date", "open", "high", "low", "close", "volume", "amount"])
+    return df.tail(max(lookback_days, 30)).copy()
+
+
+def _to_baostock_code(code: str) -> str:
+    raw = str(code).strip().zfill(6)
+    if raw.startswith(("6", "9", "5")):
+        return f"sh.{raw}"
+    return f"sz.{raw}"
 
 
 def compute_daily_features(hist: pd.DataFrame) -> dict[str, object]:

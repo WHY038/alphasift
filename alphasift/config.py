@@ -9,6 +9,8 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _PACKAGE_DIR = Path(__file__).resolve().parent
 DEFAULT_POST_ANALYZERS = ["scorecard"]
 DEFAULT_LLM_MODEL = "gemini/gemini-2.5-flash"
+DEFAULT_SNAPSHOT_SOURCE_PRIORITY = ["efinance", "akshare_em", "em_datacenter"]
+TUSHARE_FIRST_SOURCE_PRIORITY = ["tushare", "efinance", "akshare_em", "em_datacenter"]
 
 
 def _load_env_file() -> None:
@@ -69,6 +71,22 @@ def _parse_optional_path_env(name: str) -> Path | None:
     return Path(value) if value else None
 
 
+def _has_tushare_token() -> bool:
+    return bool(
+        os.getenv("TUSHARE_TOKEN", "").strip()
+        or os.getenv("TUSHARE_API_TOKEN", "").strip()
+    )
+
+
+def _resolve_snapshot_source_priority() -> list[str]:
+    explicit = os.getenv("SNAPSHOT_SOURCE_PRIORITY")
+    if explicit is not None:
+        return [s.strip() for s in explicit.split(",") if s.strip()]
+    if _has_tushare_token():
+        return list(TUSHARE_FIRST_SOURCE_PRIORITY)
+    return list(DEFAULT_SNAPSHOT_SOURCE_PRIORITY)
+
+
 def _default_strategies_dir() -> Path:
     """Find strategies directory: env var > project root > package bundled."""
     env_dir = os.getenv("STRATEGIES_DIR")
@@ -113,7 +131,7 @@ class Config:
 
     # Snapshot data source priority
     snapshot_source_priority: list[str] = field(
-        default_factory=lambda: ["efinance", "akshare_em", "em_datacenter"]
+        default_factory=lambda: list(DEFAULT_SNAPSHOT_SOURCE_PRIORITY)
     )
 
     # Strategy directory
@@ -179,8 +197,6 @@ class Config:
     @classmethod
     def from_env(cls) -> "Config":
         _load_env_file()
-        source_str = os.getenv("SNAPSHOT_SOURCE_PRIORITY", "efinance,akshare_em,em_datacenter")
-        sources = [s.strip() for s in source_str.split(",") if s.strip()]
         channels = _parse_llm_channels_env()
         llm_model = _resolve_llm_model(channels)
         return cls(
@@ -219,7 +235,7 @@ class Config:
             llm_max_retries=max(0, int(os.getenv("LLM_MAX_RETRIES", "1"))),
             llm_min_coverage=_parse_float_env("LLM_MIN_COVERAGE", 0.60),
             llm_context_max_chars=max(500, int(os.getenv("LLM_CONTEXT_MAX_CHARS", "4000"))),
-            snapshot_source_priority=sources,
+            snapshot_source_priority=_resolve_snapshot_source_priority(),
             strategies_dir=_default_strategies_dir(),
             industry_map_files=[
                 Path(item)

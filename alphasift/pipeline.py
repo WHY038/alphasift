@@ -108,9 +108,13 @@ def screen(
     daily_needed = requires_daily_features(screening.hard_filters)
     daily_requested = config.daily_enrich_enabled if daily_enrich is None else daily_enrich
     daily_limit = daily_enrich_max_candidates or config.daily_enrich_max_candidates
+    snapshot_filters = without_daily_filters(screening.hard_filters) if daily_needed else screening.hard_filters
 
     # 2. Fetch snapshot
-    snapshot_df = fetch_snapshot_with_fallback(config.snapshot_source_priority)
+    snapshot_df = fetch_snapshot_with_fallback(
+        config.snapshot_source_priority,
+        required_columns=_required_snapshot_columns(snapshot_filters),
+    )
     effective_industry_map_files = (
         list(industry_map_files)
         if industry_map_files is not None
@@ -137,7 +141,6 @@ def screen(
 
     # 3. L1 hard filter. If a strategy needs daily features, first apply only
     # snapshot-safe filters, then enrich a narrowed candidate pool.
-    snapshot_filters = without_daily_filters(screening.hard_filters) if daily_needed else screening.hard_filters
     df = apply_hard_filters(snapshot_df, snapshot_filters)
     after_filter_count = len(df)
 
@@ -442,6 +445,29 @@ def _df_to_picks(df: pd.DataFrame) -> list[Pick]:
             factor_scores=factor_scores,
         ))
     return picks
+
+
+def _required_snapshot_columns(filters) -> list[str]:
+    columns: list[str] = []
+    if filters.exclude_st:
+        columns.append("name")
+    if filters.amount_min is not None:
+        columns.append("amount")
+    if filters.price_min is not None or filters.price_max is not None:
+        columns.append("price")
+    if filters.market_cap_min is not None or filters.market_cap_max is not None:
+        columns.append("total_mv")
+    if filters.pe_ttm_min is not None or filters.pe_ttm_max is not None:
+        columns.append("pe_ratio")
+    if filters.pb_min is not None or filters.pb_max is not None:
+        columns.append("pb_ratio")
+    if filters.volume_ratio_min is not None:
+        columns.append("volume_ratio")
+    if filters.turnover_rate_min is not None:
+        columns.append("turnover_rate")
+    if filters.change_pct_min is not None or filters.change_pct_max is not None:
+        columns.append("change_pct")
+    return list(dict.fromkeys(columns))
 
 
 def _safe_float(v) -> float | None:
